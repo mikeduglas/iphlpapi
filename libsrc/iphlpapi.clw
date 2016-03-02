@@ -94,6 +94,8 @@ dwRetVal                            ULONG
 i                                   ULONG, AUTO
 ulOutBufLen                         ULONG, AUTO
   CODE
+  FREE(SELF.adapters)
+  
   !Make an initial call to GetAdaptersInfo to get
   !the necessary size into the ulOutBufLen variable
   buf &= NEW STRING(SIZE(IP_ADAPTER_INFO))
