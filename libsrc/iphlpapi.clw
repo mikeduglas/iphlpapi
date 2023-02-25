@@ -1,6 +1,9 @@
-  MEMBER
+!* iphlpapi support
+!* v1.02
+!* mikeduglas 2016-2023
+!* mikeduglas@yandex.ru
 
-  PRAGMA('compile(CWUTIL.CLW)')
+  MEMBER
 
   MAP
     MODULE('IPHLPAPI LIBRARY')
@@ -11,16 +14,24 @@
       iphlp::LoadLibrary(*CSTRING szLibFileName), LONG, PASCAL, RAW, NAME('LoadLibraryA')
       iphlp::FreeLibrary(LONG hModule), BOOL, PASCAL, PROC, NAME('FreeLibrary')
       iphlp::GetProcAddress(LONG hModule, *CSTRING szProcName), LONG, PASCAL, RAW, NAME('GetProcAddress')
-      iphlp::OutputDebugString(*CSTRING lpOutputString), PASCAL, RAW, NAME('OutputDebugStringA')
     END
 
-    INCLUDE('CWUTIL.INC'),ONCE
+    INCLUDE('printf.inc'),ONCE
   END
 
   INCLUDE('iphlpapi.inc'), ONCE
 
+!!!region Data types and equates
 szGetAdaptersInfo             CSTRING('GetAdaptersInfo'), STATIC
 paGetAdaptersInfo             LONG, NAME('fptr_GetAdaptersInfo')
+
+!System error codes
+NO_ERROR                      EQUATE(0)
+ERROR_BUFFER_OVERFLOW         EQUATE(111)
+ERROR_INVALID_DATA            EQUATE(13)
+ERROR_INVALID_PARAMETER       EQUATE(87)
+ERROR_NO_DATA                 EQUATE(232)
+ERROR_NOT_SUPPORTED           EQUATE(50)
 
 time_t                        EQUATE(LONG)
 
@@ -57,44 +68,39 @@ SecondaryWinsServer             LIKE(IP_ADDR_STRING)
 LeaseObtained                   time_t
 LeaseExpires                    time_t
                               END
-  
-iphlp::Trace                  PROCEDURE(STRING pMsg)
-sPrefix                         CSTRING('[iphlpapi] ')
-szMsg                           &CSTRING
-  CODE
-  szMsg &= NEW CSTRING(LEN(sPrefix) + 1 + LEN(CLIP(pMsg)) + 1)
-  szMsg = sPrefix & CLIP(pMsg)
-  iphlp::OutputDebugString(szMsg)
-  DISPOSE(szMsg)
+!!!endregion
 
-TIPAdapterInfo.Construct      PROCEDURE()
+!!!region Helper functions
+iphlp::Trace                  PROCEDURE(STRING pMsg)
+sPrefix                         STRING('[iphlpapi]')
+  CODE
+  printd('%z %s', sPrefix, pMsg)
+!!!endregion
+
+!!!region TIPHlpApi
+TIPHlpApi.Construct           PROCEDURE()
 szDllName                       CSTRING('iphlpapi')
   CODE
   SELF.hDll = iphlp::LoadLibrary(szDllName)
   IF SELF.hDll
     paGetAdaptersInfo = iphlp::GetProcAddress(SELF.hDll, szGetAdaptersInfo)
   END
-
-  SELF.adapters &= NEW typAdapterInfoQ
   
-TIPAdapterInfo.Destruct       PROCEDURE()
+TIPHlpApi.Destruct            PROCEDURE()
   CODE
   IF SELF.hDll
     iphlp::FreeLibrary(SELF.hDll)
   END
 
-  FREE(SELF.adapters)
-  DISPOSE(SELF.adapters)
-
-TIPAdapterInfo.GetAdaptersInfo    PROCEDURE()
-buf                                 &STRING
-adapterInfo                         &IP_ADAPTER_INFO
-adapter                             &IP_ADAPTER_INFO
-dwRetVal                            ULONG
-i                                   ULONG, AUTO
-ulOutBufLen                         ULONG, AUTO
+TIPHlpApi.GetAdaptersInfo     PROCEDURE(*typAdapterInfoQ pAdaptersInfo)
+buf                             &STRING
+adapterInfo                     &IP_ADAPTER_INFO
+adapter                         &IP_ADAPTER_INFO
+dwRetVal                        ULONG
+i                               ULONG, AUTO
+ulOutBufLen                     ULONG, AUTO
   CODE
-  FREE(SELF.adapters)
+  FREE(pAdaptersInfo)
   
   !Make an initial call to GetAdaptersInfo to get
   !the necessary size into the ulOutBufLen variable
@@ -107,9 +113,9 @@ ulOutBufLen                         ULONG, AUTO
     dwRetVal = iphlp::GetAdaptersInfo(buf, ulOutBufLen)
   END
   
-  IF dwRetVal <> 0  !NO_ERROR
+  IF dwRetVal <> NO_ERROR
     DISPOSE(buf)
-    MESSAGE('GetAdaptersInfo failed with error '& dwRetVal)
+    printd('GetAdaptersInfo failed with error '& dwRetVal)
     RETURN dwRetVal
   END
   
@@ -117,34 +123,34 @@ ulOutBufLen                         ULONG, AUTO
   
   adapter &= adapterInfo
   LOOP WHILE NOT adapter &= NULL
-    CLEAR(SELF.adapters)
-    SELF.adapters.ComboIndex = adapter.ComboIndex
-    SELF.adapters.AdapterName = adapter.AdapterName
-    SELF.adapters.Description = adapter.Description
-    SELF.adapters.Index = adapter.Index
-    SELF.adapters.Type = adapter.Type
-    SELF.adapters.IpAddress = adapter.IpAddressList.IpAddress
-    SELF.adapters.IpMask = adapter.IpAddressList.IpMask
-    SELF.adapters.Gateway = adapter.GatewayList.IpAddress
-    SELF.adapters.DhcpEnabled = adapter.DhcpEnabled
-    SELF.adapters.DhcpServer = adapter.DhcpServer.IpAddress
-    SELF.adapters.DhcpMask = adapter.DhcpServer.IpMask
-    SELF.adapters.HaveWins = adapter.HaveWins
-    SELF.adapters.PrimaryWinsServer = adapter.PrimaryWinsServer.IpAddress
-    SELF.adapters.SecondaryWinsServer = adapter.SecondaryWinsServer.IpAddress
+    CLEAR(pAdaptersInfo)
+    pAdaptersInfo.ComboIndex = adapter.ComboIndex
+    pAdaptersInfo.AdapterName = adapter.AdapterName
+    pAdaptersInfo.Description = adapter.Description
+    pAdaptersInfo.Index = adapter.Index
+    pAdaptersInfo.Type = adapter.Type
+    pAdaptersInfo.IpAddress = adapter.IpAddressList.IpAddress
+    pAdaptersInfo.IpMask = adapter.IpAddressList.IpMask
+    pAdaptersInfo.Gateway = adapter.GatewayList.IpAddress
+    pAdaptersInfo.DhcpEnabled = adapter.DhcpEnabled
+    pAdaptersInfo.DhcpServer = adapter.DhcpServer.IpAddress
+    pAdaptersInfo.DhcpMask = adapter.DhcpServer.IpMask
+    pAdaptersInfo.HaveWins = adapter.HaveWins
+    pAdaptersInfo.PrimaryWinsServer = adapter.PrimaryWinsServer.IpAddress
+    pAdaptersInfo.SecondaryWinsServer = adapter.SecondaryWinsServer.IpAddress
     
     IF NOT adapter.CurrentIpAddress &= NULL
-      SELF.adapters.CurrentIpAddress = adapter.CurrentIpAddress.IpAddress
+      pAdaptersInfo.CurrentIpAddress = adapter.CurrentIpAddress.IpAddress
     END
     
     LOOP i = 1 TO adapter.AddressLength
-      SELF.adapters.Address = CLIP(SELF.adapters.Address) & ByteToHex(adapter.Address[i])
+      pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & printf('%X', adapter.Address[i])
       IF i < adapter.AddressLength
-        SELF.adapters.Address = CLIP(SELF.adapters.Address) & '-'
+        pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & '-'
       END
     END
 
-    ADD(SELF.adapters)
+    ADD(pAdaptersInfo)
     
     adapter &= (adapter.Next)
   END
@@ -152,8 +158,8 @@ ulOutBufLen                         ULONG, AUTO
   DISPOSE(buf)
   
   RETURN NO_ERROR
-  
-TIPAdapterInfo.GetAdatperTypeName PROCEDURE(ULONG pType)
+
+TIPHlpApi.GetAdatperTypeName  PROCEDURE(ULONG pType)
   CODE
   CASE pType
   OF MIB_IF_TYPE_OTHER
@@ -175,3 +181,4 @@ TIPAdapterInfo.GetAdatperTypeName PROCEDURE(ULONG pType)
   ELSE
     RETURN 'Unknown type '& pType
   END
+!!!endregion
