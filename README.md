@@ -1,6 +1,6 @@
 # iphlpapi
 
-This class is a wrapper about the APIs found in iphlpapi.dll.
+This class is a wrapper around the APIs found in iphlpapi.dll.
 At the moment, following APIs are supported:
 
 - GetAdaptersInfo.
