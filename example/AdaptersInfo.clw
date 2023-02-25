@@ -7,17 +7,17 @@
 
   INCLUDE('iphlpapi.inc'), ONCE
 
+NO_ERROR                      EQUATE(0)
+
+iphlp                         TIPHlpApi
+
   CODE
   GetAdaptersInfo()
   
 GetAdaptersInfo               PROCEDURE()
-iphlp                           TIPHlpApi
 ai                              QUEUE(typAdapterInfoQ).
 res                             ULONG, AUTO
 i                               LONG, AUTO
-
-NO_ERROR                        EQUATE(0)
-
   CODE
   res = iphlp.GetAdaptersInfo(ai)
   IF res = NO_ERROR

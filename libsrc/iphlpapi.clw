@@ -102,62 +102,65 @@ ulOutBufLen                     ULONG, AUTO
   CODE
   FREE(pAdaptersInfo)
   
-  !Make an initial call to GetAdaptersInfo to get
-  !the necessary size into the ulOutBufLen variable
-  buf &= NEW STRING(SIZE(IP_ADAPTER_INFO))
-  ulOutBufLen = 0
-  dwRetVal = iphlp::GetAdaptersInfo(buf, ulOutBufLen)
-  IF dwRetVal = ERROR_BUFFER_OVERFLOW
-    DISPOSE(buf)
-    buf &= NEW STRING(ulOutBufLen)
+  IF paGetAdaptersInfo
+    !Make an initial call to GetAdaptersInfo to get
+    !the necessary size into the ulOutBufLen variable
+    buf &= NEW STRING(SIZE(IP_ADAPTER_INFO))
+    ulOutBufLen = 0
     dwRetVal = iphlp::GetAdaptersInfo(buf, ulOutBufLen)
-  END
-  
-  IF dwRetVal <> NO_ERROR
-    DISPOSE(buf)
-    printd('GetAdaptersInfo failed with error '& dwRetVal)
-    RETURN dwRetVal
-  END
-  
-  adapterInfo &= (ADDRESS(buf))
-  
-  adapter &= adapterInfo
-  LOOP WHILE NOT adapter &= NULL
-    CLEAR(pAdaptersInfo)
-    pAdaptersInfo.ComboIndex = adapter.ComboIndex
-    pAdaptersInfo.AdapterName = adapter.AdapterName
-    pAdaptersInfo.Description = adapter.Description
-    pAdaptersInfo.Index = adapter.Index
-    pAdaptersInfo.Type = adapter.Type
-    pAdaptersInfo.IpAddress = adapter.IpAddressList.IpAddress
-    pAdaptersInfo.IpMask = adapter.IpAddressList.IpMask
-    pAdaptersInfo.Gateway = adapter.GatewayList.IpAddress
-    pAdaptersInfo.DhcpEnabled = adapter.DhcpEnabled
-    pAdaptersInfo.DhcpServer = adapter.DhcpServer.IpAddress
-    pAdaptersInfo.DhcpMask = adapter.DhcpServer.IpMask
-    pAdaptersInfo.HaveWins = adapter.HaveWins
-    pAdaptersInfo.PrimaryWinsServer = adapter.PrimaryWinsServer.IpAddress
-    pAdaptersInfo.SecondaryWinsServer = adapter.SecondaryWinsServer.IpAddress
-    
-    IF NOT adapter.CurrentIpAddress &= NULL
-      pAdaptersInfo.CurrentIpAddress = adapter.CurrentIpAddress.IpAddress
+    IF dwRetVal = ERROR_BUFFER_OVERFLOW
+      DISPOSE(buf)
+      buf &= NEW STRING(ulOutBufLen)
+      dwRetVal = iphlp::GetAdaptersInfo(buf, ulOutBufLen)
     END
+  
+    IF dwRetVal <> NO_ERROR
+      DISPOSE(buf)
+      printd('GetAdaptersInfo failed with error '& dwRetVal)
+      RETURN dwRetVal
+    END
+  
+    adapterInfo &= (ADDRESS(buf))
+  
+    adapter &= adapterInfo
+    LOOP WHILE NOT adapter &= NULL
+      CLEAR(pAdaptersInfo)
+      pAdaptersInfo.ComboIndex = adapter.ComboIndex
+      pAdaptersInfo.AdapterName = adapter.AdapterName
+      pAdaptersInfo.Description = adapter.Description
+      pAdaptersInfo.Index = adapter.Index
+      pAdaptersInfo.Type = adapter.Type
+      pAdaptersInfo.IpAddress = adapter.IpAddressList.IpAddress
+      pAdaptersInfo.IpMask = adapter.IpAddressList.IpMask
+      pAdaptersInfo.Gateway = adapter.GatewayList.IpAddress
+      pAdaptersInfo.DhcpEnabled = adapter.DhcpEnabled
+      pAdaptersInfo.DhcpServer = adapter.DhcpServer.IpAddress
+      pAdaptersInfo.DhcpMask = adapter.DhcpServer.IpMask
+      pAdaptersInfo.HaveWins = adapter.HaveWins
+      pAdaptersInfo.PrimaryWinsServer = adapter.PrimaryWinsServer.IpAddress
+      pAdaptersInfo.SecondaryWinsServer = adapter.SecondaryWinsServer.IpAddress
     
-    LOOP i = 1 TO adapter.AddressLength
-      pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & printf('%X', adapter.Address[i])
-      IF i < adapter.AddressLength
-        pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & '-'
+      IF NOT adapter.CurrentIpAddress &= NULL
+        pAdaptersInfo.CurrentIpAddress = adapter.CurrentIpAddress.IpAddress
       END
+    
+      LOOP i = 1 TO adapter.AddressLength
+        pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & printf('%X', adapter.Address[i])
+        IF i < adapter.AddressLength
+          pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & '-'
+        END
+      END
+
+      ADD(pAdaptersInfo)
+    
+      adapter &= (adapter.Next)
     END
 
-    ADD(pAdaptersInfo)
-    
-    adapter &= (adapter.Next)
+    DISPOSE(buf)
+    RETURN NO_ERROR
+  ELSE
+    RETURN ERROR_NOT_SUPPORTED
   END
-
-  DISPOSE(buf)
-  
-  RETURN NO_ERROR
 
 TIPHlpApi.GetAdatperTypeName  PROCEDURE(ULONG pType)
   CODE
