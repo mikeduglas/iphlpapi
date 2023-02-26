@@ -6,6 +6,9 @@ At the moment, following APIs are supported:
 - [GetAdaptersInfo](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getadaptersinfo).
 
 ## Version history
+v1.03
+- Fixed Ip addresses and Gateways.
+
 v1.02
 - Removed CWUtil dependency.
 - Class TIPAdapterInfo renamed to TIPHlpApi.

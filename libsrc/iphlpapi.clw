@@ -1,5 +1,5 @@
 !* iphlpapi support
-!* v1.02
+!* v1.03
 !* mikeduglas 2016-2023
 !* mikeduglas@yandex.ru
 
@@ -16,6 +16,8 @@
       iphlp::GetProcAddress(LONG hModule, *CSTRING szProcName), LONG, PASCAL, RAW, NAME('GetProcAddress')
     END
 
+    Get_IP_ADDR_STRING_Count(CONST *IP_ADDR_STRING pList), LONG, PRIVATE    !- get a number of entries in a linked-list of IPv4 addresses.
+    FormatAddress(*BYTE[] pAddress, ULONG pAddressLength), STRING, PRIVATE  !- format an address to XX-XX-XX-XX-XX-XX string
     INCLUDE('printf.inc'),ONCE
   END
 
@@ -36,7 +38,7 @@ ERROR_NOT_SUPPORTED           EQUATE(50)
 time_t                        EQUATE(LONG)
 
 !IP_ADDRESS_STRING             GROUP, TYPE
-!_String                         STRING(4 * 4)
+!_String                         STRING(4 * 4)  !xxx.xxx.xxx.xxx
 !                              END
 !
 !IP_MASK_STRING                LIKE(IP_ADDRESS_STRING), TYPE
@@ -48,33 +50,58 @@ IpMask                          STRING(16)  !LIKE(IP_MASK_STRING)
 Context                         ULONG
                               END
 
+!https://learn.microsoft.com/en-us/windows/win32/api/iptypes/ns-iptypes-ip_adapter_info
 IP_ADAPTER_INFO               GROUP, TYPE
-Next                            LONG  !&IP_ADAPTER_INFO
-ComboIndex                      ULONG
-AdapterName                     STRING(MAX_ADAPTER_NAME_LENGTH + 4)
-Description                     STRING(MAX_ADAPTER_DESCRIPTION_LENGTH + 4)
-AddressLength                   ULONG
-Address                         BYTE, DIM(MAX_ADAPTER_ADDRESS_LENGTH)
-Index                           ULONG
-Type                            ULONG
-DhcpEnabled                     ULONG
-CurrentIpAddress                &IP_ADDR_STRING !reserved
-IpAddressList                   LIKE(IP_ADDR_STRING)
-GatewayList                     LIKE(IP_ADDR_STRING)
-DhcpServer                      LIKE(IP_ADDR_STRING)
-HaveWins                        BOOL
-PrimaryWinsServer               LIKE(IP_ADDR_STRING)
-SecondaryWinsServer             LIKE(IP_ADDR_STRING)
-LeaseObtained                   time_t
-LeaseExpires                    time_t
+Next                            LONG                                        !&IP_ADAPTER_INFO  A pointer to the next adapter in the list of adapters.
+ComboIndex                      ULONG                                       !Reserved.
+AdapterName                     STRING(MAX_ADAPTER_NAME_LENGTH + 4)         !An ANSI character string of the name of the adapter.
+Description                     STRING(MAX_ADAPTER_DESCRIPTION_LENGTH + 4)  !An ANSI character string that contains the description of the adapter.
+AddressLength                   ULONG                                       !The length, in bytes, of the hardware address for the adapter.
+Address                         BYTE, DIM(MAX_ADAPTER_ADDRESS_LENGTH)       !The hardware address for the adapter represented as a BYTE array.
+Index                           ULONG                                       !The adapter index may change when an adapter is disabled and then enabled, or under other circumstances, and should not be considered persistent.
+Type                            ULONG                                       !The adapter type. Possible values for the adapter type are listed in the Ipifcons.h header file.
+DhcpEnabled                     ULONG                                       !An option value that specifies whether the dynamic host configuration protocol (DHCP) is enabled for this adapter.
+CurrentIpAddress                LONG                                        !&IP_ADDR_STRING Reserved
+IpAddressList                   LIKE(IP_ADDR_STRING)                        !The list of IPv4 addresses associated with this adapter represented as a linked list of IP_ADDR_STRING structures. An adapter can have multiple IPv4 addresses assigned to it.
+GatewayList                     LIKE(IP_ADDR_STRING)                        !The IPv4 address of the gateway for this adapter represented as a linked list of IP_ADDR_STRING structures. An adapter can have multiple IPv4 gateway addresses assigned to it. This list usually contains a single entry for IPv4 address of the default gateway for this adapter.
+DhcpServer                      LIKE(IP_ADDR_STRING)                        !The IPv4 address of the DHCP server for this adapter represented as a linked list of IP_ADDR_STRING structures. This list contains a single entry for the IPv4 address of the DHCP server for this adapter. A value of 255.255.255.255 indicates the DHCP server could not be reached, or is in the process of being reached.
+HaveWins                        BOOL                                        !An option value that specifies whether this adapter uses the Windows Internet Name Service (WINS).
+PrimaryWinsServer               LIKE(IP_ADDR_STRING)                        !The IPv4 address of the primary WINS server represented as a linked list of IP_ADDR_STRING structures. This list contains a single entry for the IPv4 address of the primary WINS server for this adapter.
+SecondaryWinsServer             LIKE(IP_ADDR_STRING)                        !The IPv4 address of the secondary WINS server represented as a linked list of IP_ADDR_STRING structures. An adapter can have multiple secondary WINS server addresses assigned to it.
+LeaseObtained                   time_t                                      !The time when the current DHCP lease was obtained.
+LeaseExpires                    time_t                                      !The time when the current DHCP lease expires.
                               END
 !!!endregion
 
 !!!region Helper functions
 iphlp::Trace                  PROCEDURE(STRING pMsg)
-sPrefix                         STRING('[iphlpapi]')
   CODE
-  printd('%z %s', sPrefix, pMsg)
+  printd('[iphlpapi] %s', pMsg)
+  
+  
+Get_IP_ADDR_STRING_Count      PROCEDURE(CONST *IP_ADDR_STRING pList)
+slist                           &IP_ADDR_STRING, AUTO
+nCount                          LONG, AUTO
+  CODE
+  nCount = 0
+  slist &= pList
+  LOOP
+    nCount += 1
+    slist &= (slist.Next)
+  WHILE NOT slist &= NULL
+  RETURN nCount
+  
+FormatAddress                 PROCEDURE(*BYTE[] pAddress, ULONG pAddressLength)
+res                             STRING(32)
+i                               LONG, AUTO
+  CODE
+  LOOP i = 1 TO pAddressLength
+    res = CLIP(res) & printf('%X', pAddress[i])
+    IF i < pAddressLength
+      res = CLIP(res) & '-'
+    END
+  END
+  RETURN res
 !!!endregion
 
 !!!region TIPHlpApi
@@ -93,10 +120,11 @@ TIPHlpApi.Destruct            PROCEDURE()
   END
 
 TIPHlpApi.GetAdaptersInfo     PROCEDURE(*typAdapterInfoQ pAdaptersInfo)
-buf                             &STRING
-adapterInfo                     &IP_ADAPTER_INFO
-adapter                         &IP_ADAPTER_INFO
-dwRetVal                        ULONG
+buf                             &STRING, AUTO
+adapterInfo                     &IP_ADAPTER_INFO, AUTO
+adapter                         &IP_ADAPTER_INFO, AUTO
+adrList                         &IP_ADDR_STRING, AUTO
+dwRetVal                        ULONG, AUTO
 i                               ULONG, AUTO
 ulOutBufLen                     ULONG, AUTO
   CODE
@@ -125,31 +153,56 @@ ulOutBufLen                     ULONG, AUTO
     adapter &= adapterInfo
     LOOP WHILE NOT adapter &= NULL
       CLEAR(pAdaptersInfo)
-      pAdaptersInfo.ComboIndex = adapter.ComboIndex
+      CLEAR(pAdaptersInfo.IpAddressList)
+      CLEAR(pAdaptersInfo.GatewayList)
+      
       pAdaptersInfo.AdapterName = adapter.AdapterName
       pAdaptersInfo.Description = adapter.Description
       pAdaptersInfo.Index = adapter.Index
       pAdaptersInfo.Type = adapter.Type
-      pAdaptersInfo.IpAddress = adapter.IpAddressList.IpAddress
-      pAdaptersInfo.IpMask = adapter.IpAddressList.IpMask
-      pAdaptersInfo.Gateway = adapter.GatewayList.IpAddress
       pAdaptersInfo.DhcpEnabled = adapter.DhcpEnabled
-      pAdaptersInfo.DhcpServer = adapter.DhcpServer.IpAddress
-      pAdaptersInfo.DhcpMask = adapter.DhcpServer.IpMask
+      IF pAdaptersInfo.DhcpEnabled
+        pAdaptersInfo.DhcpServer = adapter.DhcpServer.IpAddress
+        pAdaptersInfo.DhcpMask = adapter.DhcpServer.IpMask
+      END
       pAdaptersInfo.HaveWins = adapter.HaveWins
-      pAdaptersInfo.PrimaryWinsServer = adapter.PrimaryWinsServer.IpAddress
-      pAdaptersInfo.SecondaryWinsServer = adapter.SecondaryWinsServer.IpAddress
-    
-      IF NOT adapter.CurrentIpAddress &= NULL
-        pAdaptersInfo.CurrentIpAddress = adapter.CurrentIpAddress.IpAddress
+      IF pAdaptersInfo.HaveWins
+        pAdaptersInfo.PrimaryWinsServer = adapter.PrimaryWinsServer.IpAddress
+        pAdaptersInfo.SecondaryWinsServer = adapter.SecondaryWinsServer.IpAddress
       END
-    
-      LOOP i = 1 TO adapter.AddressLength
-        pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & printf('%X', adapter.Address[i])
-        IF i < adapter.AddressLength
-          pAdaptersInfo.Address = CLIP(pAdaptersInfo.Address) & '-'
-        END
+      
+      !- a number of Ip addresses
+      pAdaptersInfo.IpAddressListCount  = Get_IP_ADDR_STRING_Count(adapter.IpAddressList)
+      IF pAdaptersInfo.IpAddressListCount > MAXIMUM(pAdaptersInfo.IpAddressList, 1)
+        iphlp::Trace(printf('Warning: A number of Ip addresses (%i) is greater then IpAddressList array size (%i)', pAdaptersInfo.IpAddressListCount, MAXIMUM(pAdaptersInfo.IpAddressList, 1)))
       END
+      
+      !- Ip addresses
+      adrList &= adapter.IpAddressList
+      LOOP i=1 TO pAdaptersInfo.IpAddressListCount
+        pAdaptersInfo.IpAddressList[i].IpAddress = adrList.IpAddress
+        pAdaptersInfo.IpAddressList[i].IpMask = adrList.IpMask
+        
+        adrList &= (adrList.Next)
+      WHILE (NOT adrList &= NULL) AND (i <= MAXIMUM(pAdaptersInfo.IpAddressList, 1))
+      
+      !- a number of gateways
+      pAdaptersInfo.GatewayListCount  = Get_IP_ADDR_STRING_Count(adapter.GatewayList)
+      IF pAdaptersInfo.GatewayListCount > MAXIMUM(pAdaptersInfo.GatewayList, 1)
+        iphlp::Trace(printf('Warning: A number of gateways (%i) is greater then GatewayList array size (%i)', pAdaptersInfo.GatewayListCount, MAXIMUM(pAdaptersInfo.GatewayList, 1)))
+      END
+
+      !- gateways
+      adrList &= adapter.GatewayList
+      LOOP i=1 TO pAdaptersInfo.GatewayListCount
+        pAdaptersInfo.GatewayList[i].Gateway = adrList.IpAddress
+        pAdaptersInfo.GatewayList[i].GatewayMask = adrList.IpMask
+        
+        adrList &= (adrList.Next)
+      WHILE (NOT adrList &= NULL) AND (i <= MAXIMUM(pAdaptersInfo.GatewayList, 1))
+
+      !- Formatted address
+      pAdaptersInfo.Address = FormatAddress(adapter.Address, adapter.AddressLength)
 
       ADD(pAdaptersInfo)
     

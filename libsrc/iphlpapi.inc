@@ -1,5 +1,5 @@
 !* iphlpapi support
-!* v1.02
+!* v1.03
 !* mikeduglas 2016-2023
 !* mikeduglas@yandex.ru
 
@@ -25,17 +25,22 @@ MAX_ADAPTER_DESCRIPTION_LENGTH  EQUATE(128)
 MAX_ADAPTER_NAME_LENGTH         EQUATE(256)
 
 typAdapterInfoQ               QUEUE, TYPE
-ComboIndex                      ULONG
-AdapterName                     STRING(MAX_ADAPTER_NAME_LENGTH + 4)
-Description                     STRING(MAX_ADAPTER_DESCRIPTION_LENGTH + 4)
+AdapterName                     STRING(260) !MAX_ADAPTER_NAME_LENGTH + 4
+Description                     STRING(132) !MAX_ADAPTER_DESCRIPTION_LENGTH + 4
 Address                         STRING(32)
 Index                           ULONG
 Type                            ULONG
 DhcpEnabled                     ULONG
-CurrentIpAddress                STRING(16)
-IpAddress                       STRING(16)
-IpMask                          STRING(16)
-Gateway                         STRING(16)
+IpAddressListCount              ULONG
+IpAddressList                   GROUP, DIM(4) !actually can be more then 4, see IpAddressListCount
+IpAddress                         STRING(16)
+IpMask                            STRING(16)
+                                END
+GatewayListCount                ULONG
+GatewayList                     GROUP, DIM(4) !actually can be more then 4, see GatewayListCount
+Gateway                           STRING(16)
+GatewayMask                       STRING(16)
+                                END
 DhcpServer                      STRING(16)
 DhcpMask                        STRING(16)
 HaveWins                        BOOL
